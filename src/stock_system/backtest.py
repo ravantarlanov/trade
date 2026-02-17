@@ -13,6 +13,7 @@ from scipy import stats
 class BacktestConfig:
     hold_days: int = 180
     transaction_cost_bps: float = 0.0
+    filing_delay_days: int = 45
 
 
 def _normalize_prices(prices: pd.DataFrame) -> pd.DataFrame:
@@ -54,6 +55,10 @@ def backtest_strategy(
     price_df = _normalize_prices(prices)
     screen_df = screen_results.copy()
     screen_df["date_screened"] = pd.to_datetime(screen_df["date_screened"])
+    screen_df = screen_df.sort_values("date_screened")
+
+    # Track the sell date of the most recent position per ticker to prevent overlaps.
+    active_until: dict[str, pd.Timestamp] = {}
 
     rows: list[dict[str, Any]] = []
     for _, signal in screen_df.iterrows():
@@ -61,11 +66,18 @@ def backtest_strategy(
             continue
 
         ticker = signal["ticker"]
+
+        # Skip if we already hold a position in this ticker.
+        if ticker in active_until and signal["date_screened"] < active_until[ticker]:
+            continue
+
         ticker_prices = price_df[price_df["ticker"] == ticker]
         if ticker_prices.empty:
             continue
 
-        buy_result = _price_on_or_after(ticker_prices, signal["date_screened"])
+        # Delay buy to account for filing lag (avoids look-ahead bias).
+        earliest_buy = signal["date_screened"] + timedelta(days=config.filing_delay_days)
+        buy_result = _price_on_or_after(ticker_prices, earliest_buy)
         if buy_result is None:
             continue
 
@@ -82,6 +94,8 @@ def backtest_strategy(
             sell_date, sell_price = sell_result
             reason_exit = "time_exit"
 
+        active_until[ticker] = sell_date
+
         gross_return = (sell_price - buy_price) / buy_price
         total_cost = 2 * config.transaction_cost_bps / 10000.0
         net_return = gross_return - total_cost
@@ -92,7 +106,7 @@ def backtest_strategy(
                 "signal_date": signal["date_screened"].date().isoformat(),
                 "buy_date": buy_date.date().isoformat(),
                 "sell_date": sell_date.date().isoformat(),
-                "hold_days": config.hold_days,
+                "hold_days": (sell_date - buy_date).days,
                 "buy_price": buy_price,
                 "sell_price": sell_price,
                 "return_pct": net_return * 100,
@@ -117,7 +131,8 @@ def summarize_backtest(results: pd.DataFrame) -> dict[str, float | int | None]:
             "win_rate_p_value": None,
         }
 
-    r = results["return_pct"].astype(float)
+    sorted_results = results.sort_values("buy_date").reset_index(drop=True)
+    r = sorted_results["return_pct"].astype(float)
     win_rate = float((r > 0).mean())
 
     equity = (1 + r / 100.0).cumprod()
@@ -125,13 +140,19 @@ def summarize_backtest(results: pd.DataFrame) -> dict[str, float | int | None]:
     drawdowns = equity / running_max - 1
     max_drawdown = float(drawdowns.min())
 
-    periods = max(len(r), 1)
-    cagr = float(equity.iloc[-1] ** (252 / periods) - 1)
+    # CAGR based on actual calendar time between first buy and last sell.
+    first_buy = pd.to_datetime(sorted_results["buy_date"]).min()
+    last_sell = pd.to_datetime(sorted_results["sell_date"]).max()
+    total_days = (last_sell - first_buy).days
+    years = total_days / 365.25 if total_days > 0 else 1.0
+    cagr = float(equity.iloc[-1] ** (1.0 / years) - 1)
 
     excess = r / 100.0
     sharpe = None
     if excess.std(ddof=1) > 0:
-        sharpe = float((excess.mean() / excess.std(ddof=1)) * np.sqrt(252))
+        # Annualize using actual trade frequency, not a fixed 252 daily assumption.
+        trades_per_year = len(r) / years if years > 0 else len(r)
+        sharpe = float((excess.mean() / excess.std(ddof=1)) * np.sqrt(trades_per_year))
 
     wins = int((r > 0).sum())
     binom = stats.binomtest(wins, len(r), p=0.5, alternative="greater")

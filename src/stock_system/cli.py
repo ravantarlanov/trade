@@ -32,7 +32,6 @@ def parse_args() -> argparse.Namespace:
     p_fund.add_argument("--db-path", required=True)
     p_fund.add_argument("--tickers", nargs="+", required=True)
     p_fund.add_argument("--source", choices=["yfinance", "fmp"], default="yfinance")
-    p_fund.add_argument("--fmp-api-key", default=os.getenv("FMP_API_KEY"))
 
     p_screen = sub.add_parser("screen", help="Run screening on latest financial rows")
     p_screen.add_argument("--db-path", required=True)
@@ -44,6 +43,8 @@ def parse_args() -> argparse.Namespace:
     p_backtest.add_argument("--start")
     p_backtest.add_argument("--end")
     p_backtest.add_argument("--transaction-cost-bps", type=float, default=0.0)
+    p_backtest.add_argument("--filing-delay-days", type=int, default=45,
+                            help="Days after signal to delay buy (avoids look-ahead bias)")
 
     p_analyze = sub.add_parser("analyze", help="Export CSV reports and plots")
     p_analyze.add_argument("--db-path", required=True)
@@ -131,6 +132,7 @@ def cmd_backtest(
     start: str | None,
     end: str | None,
     transaction_cost_bps: float,
+    filing_delay_days: int = 45,
 ) -> None:
     q_screen = "SELECT ticker, date_screened, passes_screen, metrics_json FROM screening_results"
     filters = []
@@ -153,13 +155,19 @@ def cmd_backtest(
     metrics_df = pd.json_normalize(metrics_expanded)
     signals = pd.concat([signals.drop(columns=["metrics_json"]), metrics_df], axis=1)
 
-    prices = db.query_df("SELECT ticker, date, close FROM stock_prices")
+    tickers = signals["ticker"].unique().tolist()
+    placeholders = ",".join("?" for _ in tickers)
+    prices = db.query_df(
+        f"SELECT ticker, date, close FROM stock_prices WHERE ticker IN ({placeholders})",
+        tuple(tickers),
+    )
     results = backtest_strategy(
         signals,
         prices,
         config=BacktestConfig(
             hold_days=hold_days,
             transaction_cost_bps=transaction_cost_bps,
+            filing_delay_days=filing_delay_days,
         ),
     )
 
@@ -251,11 +259,11 @@ def main() -> None:
     elif args.command == "fetch-prices":
         cmd_fetch_prices(db, args.tickers, args.start, args.end)
     elif args.command == "fetch-fundamentals":
-        cmd_fetch_fundamentals(db, args.tickers, args.source, args.fmp_api_key)
+        cmd_fetch_fundamentals(db, args.tickers, args.source, os.getenv("FMP_API_KEY"))
     elif args.command == "screen":
         cmd_screen(db, args.as_of)
     elif args.command == "backtest":
-        cmd_backtest(db, args.hold_days, args.start, args.end, args.transaction_cost_bps)
+        cmd_backtest(db, args.hold_days, args.start, args.end, args.transaction_cost_bps, args.filing_delay_days)
     elif args.command == "analyze":
         cmd_analyze(db, args.output_dir)
     else:

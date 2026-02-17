@@ -1,15 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import pandas as pd
-
-
-@dataclass
-class MetricConfig:
-    min_denominator: float = 1e-9
 
 
 def safe_div(numerator: float | None, denominator: float | None) -> float | None:
@@ -81,8 +75,12 @@ def add_growth_windows(financial_df: pd.DataFrame) -> pd.DataFrame:
         ("eps", "eps_growth"),
     ]:
         df[f"{prefix}_1y"] = df.groupby("ticker")[base_col].pct_change(periods=1)
-        df[f"{prefix}_3y"] = df.groupby("ticker")[base_col].pct_change(periods=3)
-        df[f"{prefix}_5y"] = df.groupby("ticker")[base_col].pct_change(periods=5)
+        # Annualize multi-year growth rates as CAGR: (current/previous)^(1/years) - 1
+        for years in [3, 5]:
+            total_growth = df.groupby("ticker")[base_col].pct_change(periods=years)
+            # Only annualize when the growth ratio (1 + total) is positive
+            ratio = 1 + total_growth
+            df[f"{prefix}_{years}y"] = ratio.where(ratio > 0).pow(1.0 / years) - 1
 
     return df
 
