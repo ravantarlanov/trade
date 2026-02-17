@@ -1,0 +1,60 @@
+# Stock Screening & Backtesting System
+
+Python system for:
+- Collecting historical prices and fundamentals
+- Screening stocks with growth/quality/value criteria
+- Backtesting 6-12 month holding strategies
+- Producing reports and visualizations
+
+## Quick Start
+
+1. Create virtualenv and install deps:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2. Initialize database:
+
+```bash
+python -m stock_system.cli init-db --db-path data/database.db
+```
+
+3. Fetch data (example):
+
+```bash
+python -m stock_system.cli fetch-prices --db-path data/database.db --tickers AAPL MSFT NVDA --start 2015-01-01 --end 2026-01-01
+python -m stock_system.cli fetch-fundamentals --db-path data/database.db --tickers AAPL MSFT NVDA
+```
+
+4. Run screening and backtest:
+
+```bash
+python -m stock_system.cli screen --db-path data/database.db --as-of 2024-01-31
+python -m stock_system.cli backtest --db-path data/database.db --hold-days 180 --start 2019-01-01 --end 2024-12-31
+```
+
+5. Generate analysis outputs:
+
+```bash
+python -m stock_system.cli analyze --db-path data/database.db --output-dir results
+```
+
+## Project Layout
+
+- `src/stock_system/db.py`: schema + persistence helpers
+- `src/stock_system/fetchers.py`: yfinance/FMP fetchers
+- `src/stock_system/metrics.py`: metric calculations
+- `src/stock_system/screening.py`: rule-based screening + scoring
+- `src/stock_system/backtest.py`: holding-period backtest engine
+- `src/stock_system/analysis.py`: summary stats, correlation, charts
+- `src/stock_system/cli.py`: runnable command line interface
+- `tests/`: unit tests for critical logic
+
+## Notes
+
+- yfinance data quality varies by ticker and period.
+- FMP free tier may limit request volume.
+- This scaffold is designed for iterative extension (walk-forward tests, sector segmentation, transaction-cost modeling, delisting handling).

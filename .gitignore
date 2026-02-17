@@ -1,0 +1,11 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+
+# Local data and generated outputs
+data/
+results/
+
+# Optional local env/config
+.env
