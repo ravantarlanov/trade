@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS companies (
 
 CREATE TABLE IF NOT EXISTS financial_metrics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker TEXT NOT NULL,
+    ticker TEXT NOT NULL REFERENCES companies(ticker),
     period_end TEXT NOT NULL,
     period_type TEXT NOT NULL,
     currency TEXT,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS financial_metrics (
 
 CREATE TABLE IF NOT EXISTS stock_prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker TEXT NOT NULL,
+    ticker TEXT NOT NULL REFERENCES companies(ticker),
     date TEXT NOT NULL,
     open REAL,
     high REAL,
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS stock_prices (
 
 CREATE TABLE IF NOT EXISTS screening_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker TEXT NOT NULL,
+    ticker TEXT NOT NULL REFERENCES companies(ticker),
     date_screened TEXT NOT NULL,
     score INTEGER NOT NULL,
     passes_screen INTEGER NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS screening_results (
 
 CREATE TABLE IF NOT EXISTS backtest_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ticker TEXT NOT NULL,
+    ticker TEXT NOT NULL REFERENCES companies(ticker),
     buy_date TEXT NOT NULL,
     sell_date TEXT NOT NULL,
     hold_days INTEGER NOT NULL,
@@ -86,6 +86,15 @@ CREATE TABLE IF NOT EXISTS backtest_results (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(ticker, buy_date, sell_date, hold_days)
 );
+
+CREATE INDEX IF NOT EXISTS idx_financial_metrics_ticker_period
+    ON financial_metrics(ticker, period_end);
+
+CREATE INDEX IF NOT EXISTS idx_stock_prices_ticker_date
+    ON stock_prices(ticker, date);
+
+CREATE INDEX IF NOT EXISTS idx_screening_results_date
+    ON screening_results(date_screened);
 """
 
 
@@ -96,6 +105,7 @@ class Database:
     def connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     def initialize(self) -> None:

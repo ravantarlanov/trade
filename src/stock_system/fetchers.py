@@ -147,9 +147,9 @@ class YFinanceFetcher:
                     "debt_to_equity": debt_to_equity,
                     "current_ratio": current_ratio,
                     "raw_payload": {
-                        "financials": row.dropna().to_dict(),
-                        "cashflow": cf.dropna().to_dict() if not cf.empty else {},
-                        "balance": bs.dropna().to_dict() if not bs.empty else {},
+                        "financials": _json_safe_dict(row.dropna().to_dict()),
+                        "cashflow": _json_safe_dict(cf.dropna().to_dict()) if not cf.empty else {},
+                        "balance": _json_safe_dict(bs.dropna().to_dict()) if not bs.empty else {},
                     },
                 }
             )
@@ -245,11 +245,31 @@ class FMPFetcher:
                     "roe": _ratio(net_income, equity),
                     "debt_to_equity": _ratio(total_debt, equity),
                     "current_ratio": _ratio(current_assets, current_liabilities),
-                    "raw_payload": row.to_dict(),
+                    "raw_payload": _json_safe_dict(row.to_dict()),
                 }
             )
 
         return rows
+
+
+def _json_safe_dict(d: dict[Any, Any]) -> dict[str, Any]:
+    """Convert dict keys/values to JSON-serializable types."""
+    result: dict[str, Any] = {}
+    for k, v in d.items():
+        key = k.isoformat() if hasattr(k, "isoformat") else str(k)
+        if hasattr(v, "isoformat"):
+            result[key] = v.isoformat()
+        elif isinstance(v, (int, float, str, bool, type(None))):
+            result[key] = v
+        else:
+            try:
+                if pd.isna(v):
+                    result[key] = None
+                    continue
+            except (TypeError, ValueError):
+                pass
+            result[key] = str(v)
+    return result
 
 
 def _to_float(value: Any) -> float | None:

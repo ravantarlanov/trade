@@ -101,7 +101,8 @@ def create_core_plots(results_df: pd.DataFrame, output_dir: str | Path) -> dict[
         paths["hist_return_distribution"] = p
 
         plt.figure(figsize=(10, 6))
-        cumulative = (1 + results_df["return_pct"].fillna(0) / 100.0).cumprod()
+        sorted_df = results_df.sort_values("buy_date") if "buy_date" in results_df.columns else results_df
+        cumulative = (1 + sorted_df["return_pct"].fillna(0) / 100.0).cumprod()
         plt.plot(cumulative.values)
         plt.title("Cumulative Returns")
         plt.xlabel("Trade Number")
